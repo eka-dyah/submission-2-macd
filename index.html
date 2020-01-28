@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8"/>
+        <title>Image Analyzer</title>
+        <meta name="description" content="My first PWA"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <link rel="stylesheet" href="/style.css"
+        <meta name="theme-color" content="#00897B"/>
+      </head>
+<body onload="listFiles()">
+    <div class="container-fluid">
+        <br><br><h4>Image Analyzer</h4><br>
+    <button id="select-button">Select and upload files</button>
+    <input type="file" id="file-input" multiple style="display: none;" />
+    <p><b>Status:</b></p>
+    <p id="status" style="height:160px; width: 300px; overflow: scroll;" />
+    <p><b>Images:</b></p>
+    <div class="container-fluid row" id="file-list"></div>
+
+    <div id="analyze-img">
+        <h1>Analyze image:</h1>
+        <div id="wrapper" style="width:1020px; display:table;">
+            <div id="jsonOutput" style="width:600px; display:table-cell;">
+                Response:
+                <br><br>
+                <textarea id="responseTextArea" class="UIInput"
+                  style="width:580px; height:400px;">Click picture above</textarea>
+            </div>
+        <div id="imageDiv" style="height:420px; display:table-cell;">
+            Source image:
+            <br><br>
+            <img id="sourceImage" height="400" />
+        </div>
+        </div>
+    </div>
+</div><br><br>
+</body>
+<script src="/analyzer.js"></script>
+<script src="/azure-storage-blob.js" charset="utf-8"></script>
+<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+
+<script>
+const selectButton = document.getElementById("select-button");
+const fileInput = document.getElementById("file-input");
+const listButton = document.getElementById("list-button");
+const status = document.getElementById("status");
+const fileList = document.getElementById("file-list");
+
+const reportStatus = message => {
+    status.innerHTML += `${message}<br/>`;
+    status.scrollTop = status.scrollHeight;
+}
+const accountName = "ephotos";
+const sasString = "se=2020-02-22&sp=rwdlac&sv=2018-03-28&ss=b&srt=sco&sig=TSl7UjLDqSk8lKvxa5h4LX1rD%2BHuB6Xygo319rAr4eg%3D";
+const containerName = "photos";
+const containerURL = new azblob.ContainerURL(
+    `https://${accountName}.blob.core.windows.net/${containerName}?${sasString}`,
+    azblob.StorageURL.newPipeline(new azblob.AnonymousCredential));
+
+    
+const listFiles = async () => {
+    var count = 0;
+    fileList.innerHTML = "";
+    try {
+        reportStatus("Retrieving image list...");
+        let marker = undefined;
+        do {
+            const listBlobsResponse = await containerURL.listBlobFlatSegment(
+                azblob.Aborter.none, marker);
+            marker = listBlobsResponse.nextMarker;
+            const items = listBlobsResponse.segment.blobItems;
+            for (const blob of items) {
+                count += 1;
+                fileList.innerHTML += `
+                <a href="#analyze-img" onclick="processImage(${count})">
+                <img id="img-${count}" height=200px src="https://${accountName}.blob.core.windows.net/${containerName}/${blob.name}" />
+                </a>`;
+            }
+        } while (marker);
+        if (count > 0) {
+            reportStatus("Done.");
+        } else {
+            reportStatus("The container does not contain any files.");
+        }
+    } catch (error) {
+        reportStatus(error.body.message);
+    }
+};
+
+
+const uploadFiles = async () => {
+    try {
+        reportStatus("Uploading files...");
+        const promises = [];
+        for (const file of fileInput.files) {
+            const blockBlobURL = azblob.BlockBlobURL.fromContainerURL(containerURL, file.name);
+            promises.push(azblob.uploadBrowserDataToBlockBlob(
+                azblob.Aborter.none, file, blockBlobURL));
+        }
+        await Promise.all(promises);
+        reportStatus("Done.");
+        listFiles();
+    } catch (error) {
+        reportStatus(error.body.message);
+    }
+}
+
+selectButton.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", uploadFiles);
+
+const deleteFiles = async () => {
+    try {
+        if (fileList.selectedOptions.length > 0) {
+            reportStatus("Deleting files...");
+            for (const option of fileList.selectedOptions) {
+                const blobURL = azblob.BlobURL.fromContainerURL(containerURL, option.text);
+                await blobURL.delete(azblob.Aborter.none);
+            }
+            reportStatus("Done.");
+            listFiles();
+        } else {
+            reportStatus("No files selected.");
+        }
+    } catch (error) {
+        reportStatus(error.body.message);
+    }
+};
+
+
+</script>
+
+</html>
